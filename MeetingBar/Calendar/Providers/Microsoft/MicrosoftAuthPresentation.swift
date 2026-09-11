@@ -99,6 +99,9 @@ private struct MicrosoftSignInWaitingView: View {
             Button("general_cancel".loco(), role: .cancel, action: onCancel)
         }
         .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // NSWindow.contentViewController resizes the window to the hosting view's
+        // fitting size, ignoring the contentRect above, so the view must carry
+        // an explicit width or the text wraps one character per line.
+        .frame(width: 380)
     }
 }
