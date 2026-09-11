@@ -18,10 +18,10 @@ The product principle is reliability first: **show the correct meeting, stay fre
 ## Top-level data flow
 
 ```
-                ┌──────────────────────────────────────────────┐
-                │                Calendar providers            │
-                │  EKEventStore   GCEventStore   MicrosoftGraph │
-                └───────────────▲──────────────────────────────┘
+                ┌───────────────────────────────────────────────────────────────┐
+                │                       Calendar providers                      │
+                │ EKEventStore (Apple)   GCEventStore (Google)   MSGraph (M365) │
+                └──────────────────────────────▲────────────────────────────────┘
                                 │ fetchAllCalendars / fetchEventsForDateRange
                                 │
             ┌───────────────────┴────────────────────┐
