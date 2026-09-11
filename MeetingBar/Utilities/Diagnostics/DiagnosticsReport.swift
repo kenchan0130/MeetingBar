@@ -33,8 +33,6 @@ struct PermissionSnapshot: Equatable {
         case authorized
     }
 
-    typealias GoogleAuthStatus = OAuthStatus
-
     let calendarAccess: CalendarAccess
     let notificationAccess: NotificationAccess
     let googleAuthStatus: OAuthStatus
@@ -44,24 +42,6 @@ struct PermissionSnapshot: Equatable {
     let microsoftConfigurationSource: String?
     let scriptFileExists: Bool
     let isAppStoreBuild: Bool
-
-    init(
-        calendarAccess: CalendarAccess,
-        notificationAccess: NotificationAccess,
-        googleAuthStatus: OAuthStatus,
-        microsoftAuthStatus: OAuthStatus = .notActive,
-        microsoftConfigurationSource: String? = nil,
-        scriptFileExists: Bool,
-        isAppStoreBuild: Bool
-    ) {
-        self.calendarAccess = calendarAccess
-        self.notificationAccess = notificationAccess
-        self.googleAuthStatus = googleAuthStatus
-        self.microsoftAuthStatus = microsoftAuthStatus
-        self.microsoftConfigurationSource = microsoftConfigurationSource
-        self.scriptFileExists = scriptFileExists
-        self.isAppStoreBuild = isAppStoreBuild
-    }
 }
 
 enum DiagnosticsProvider: Equatable {

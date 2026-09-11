@@ -217,9 +217,18 @@ enum MicrosoftGraphBatchPolicy {
 /// `"UTC"`, but IANA identifiers and explicit `Z`/offset suffixes are
 /// accepted too.
 enum MicrosoftGraphDateParser {
+    // Literal pattern compiled once; a typo would fail every parser test, so
+    // the force-try cannot reach users.
     private static let pattern = try! NSRegularExpression(
         pattern: #"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:?\d{2})?$"#
     )
+    /// Shared proleptic Gregorian calendar; `Calendar` is a value type and
+    /// `date(from:)` honours the components' own time zone, so one instance
+    /// serves every call without a `DateFormatter` per event.
+    private static let gregorian = Calendar(identifier: .gregorian)
+    // "UTC" is a fixed identifier present in every tz database, so this
+    // cannot fail.
+    private static let utc = TimeZone(identifier: "UTC")!
 
     /// Parses a Graph `dateTime` string (optionally with a sibling time-zone id) into a `Date`.
     static func dateTime(_ value: String, timeZoneID: String?) -> Date? {
@@ -242,16 +251,42 @@ enum MicrosoftGraphDateParser {
             guard let parsed = Self.timeZone(fromDesignator: String(trimmed[suffixRange])) else { return nil }
             timeZone = parsed
         } else {
-            timeZone = timeZoneID.flatMap(TimeZone.init(identifier:)) ?? TimeZone(identifier: "UTC")!
+            timeZone = timeZoneID.flatMap(TimeZone.init(identifier:)) ?? utc
         }
 
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.timeZone = timeZone
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        guard let base = formatter.date(from: String(trimmed[baseRange])) else { return nil }
+        guard let components = dateComponents(fromBase: trimmed[baseRange], timeZone: timeZone),
+              let base = gregorian.date(from: components) else {
+            return nil
+        }
         return base.addingTimeInterval(fraction)
+    }
+
+    /// Splits a regex-validated `yyyy-MM-ddTHH:mm:ss` string into components,
+    /// rejecting out-of-range fields the way `DateFormatter` would.
+    private static func dateComponents(fromBase base: Substring, timeZone: TimeZone) -> DateComponents? {
+        let fields = base.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
+        guard fields.count == 6,
+              (1...12).contains(fields[1]),
+              (1...31).contains(fields[2]),
+              (0...23).contains(fields[3]),
+              (0...59).contains(fields[4]),
+              (0...60).contains(fields[5]) else {
+            return nil
+        }
+        var components = DateComponents()
+        components.calendar = gregorian
+        components.timeZone = timeZone
+        components.year = fields[0]
+        components.month = fields[1]
+        components.day = fields[2]
+        components.hour = fields[3]
+        components.minute = fields[4]
+        components.second = fields[5]
+        // Reject dates the calendar would otherwise roll over (e.g. Feb 30).
+        guard let date = gregorian.date(from: components) else { return nil }
+        let roundTrip = gregorian.dateComponents(in: timeZone, from: date)
+        guard roundTrip.month == fields[1], roundTrip.day == fields[2] else { return nil }
+        return components
     }
 
     /// All-day events carry midnight boundaries in the requested zone. Only
@@ -260,13 +295,15 @@ enum MicrosoftGraphDateParser {
     static func allDayLocalDate(_ value: String, calendar: Calendar = .current) -> Date? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 10 else { return nil }
-        let dayPart = String(trimmed.prefix(10))
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
-        formatter.dateFormat = "yyyy-MM-dd"
-        guard let date = formatter.date(from: dayPart) else { return nil }
+        let fields = trimmed.prefix(10).split(separator: "-").compactMap { Int($0) }
+        guard fields.count == 3, (1...12).contains(fields[1]), (1...31).contains(fields[2]) else { return nil }
+        var components = DateComponents()
+        components.calendar = calendar
+        components.timeZone = calendar.timeZone
+        components.year = fields[0]
+        components.month = fields[1]
+        components.day = fields[2]
+        guard let date = calendar.date(from: components) else { return nil }
         return calendar.startOfDay(for: date)
     }
 
@@ -407,11 +444,8 @@ enum MicrosoftGraphConfigurationPolicy {
     static let buildClientIDKey = "MICROSOFT_CLIENT_ID"
     static let placeholderPrefix = "REPLACE_BY_"
     /// The `common` authority accepts work, school, and personal accounts.
+    /// A literal, well-formed https URL: `URL(string:)` cannot return nil.
     static let authorityURL = URL(string: "https://login.microsoftonline.com/common")!
-
-    private static let guidPattern = try! NSRegularExpression(
-        pattern: #"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"#
-    )
 
     /// Resolves the app's Entra client ID from the build setting. A placeholder
     /// or empty value yields `.missing` (onboarding shows a configuration
@@ -444,9 +478,9 @@ enum MicrosoftGraphConfigurationPolicy {
         )
     }
 
-    /// Whether a string is a well-formed client-ID GUID.
+    /// Whether a string is a well-formed client-ID GUID (8-4-4-4-12 hex).
     static func isValidClientID(_ value: String) -> Bool {
-        matches(guidPattern, value)
+        UUID(uuidString: value) != nil
     }
 
     /// Trims whitespace and returns nil for an empty result.
@@ -456,11 +490,6 @@ enum MicrosoftGraphConfigurationPolicy {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    /// Whether the regex matches across the entire string.
-    private static func matches(_ regex: NSRegularExpression, _ value: String) -> Bool {
-        let range = NSRange(value.startIndex..., in: value)
-        return regex.firstMatch(in: value, range: range) != nil
-    }
 }
 
 // MARK: - URL building
@@ -469,7 +498,25 @@ enum MicrosoftGraphURLBuilder {
     static let host = "graph.microsoft.com"
     static let basePath = "/v1.0"
     static let calendarSelectFields = "id,name,hexColor,isDefaultCalendar,owner,canShare"
+    /// Only the fields `MSGraphParser.event` reads. Without `$select` Graph
+    /// returns the full event resource (recurrence, categories, reminders,
+    /// full HTML body…), several KB per event that is parsed and discarded.
+    static let eventSelectFields = [
+        "id", "subject", "bodyPreview", "body", "start", "end", "isAllDay", "isCancelled", "showAs",
+        "location", "onlineMeeting", "onlineMeetingUrl", "webLink", "lastModifiedDateTime",
+        "organizer", "attendees", "responseStatus", "type", "seriesMasterId"
+    ].joined(separator: ",")
     static let defaultPageSize = 250
+    /// `ISO8601DateFormatter` is documented thread-safe and this instance is
+    /// never mutated after creation, so it is shared instead of rebuilt per
+    /// calendar per sync. Unlike `DateFormatter` it is not marked Sendable
+    /// by Foundation, hence the explicit opt-out.
+    nonisolated(unsafe) private static let utcTimestampFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        return formatter
+    }()
 
     /// Builds the `/me/calendars` request URL.
     static func calendarsURL(top: Int = 100) throws -> URL {
@@ -499,9 +546,7 @@ enum MicrosoftGraphURLBuilder {
         end: Date,
         top: Int = defaultPageSize
     ) throws -> URL {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        formatter.timeZone = TimeZone(identifier: "UTC")
+        let formatter = utcTimestampFormatter
 
         guard let escapedID = calendarID.addingPercentEncoding(withAllowedCharacters: pathSegmentAllowed),
               !escapedID.isEmpty else {
@@ -515,6 +560,7 @@ enum MicrosoftGraphURLBuilder {
         components.queryItems = [
             .init(name: "startDateTime", value: formatter.string(from: start)),
             .init(name: "endDateTime", value: formatter.string(from: end)),
+            .init(name: "$select", value: eventSelectFields),
             .init(name: "$orderby", value: "start/dateTime"),
             .init(name: "$top", value: String(top))
         ]

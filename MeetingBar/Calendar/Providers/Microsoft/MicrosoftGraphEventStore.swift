@@ -41,7 +41,6 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
     // MARK: - Constants
 
     private static let scopes = ["Calendars.Read"]
-    private static let calendarSelectFields = MicrosoftGraphURLBuilder.calendarSelectFields
     /// Keychain service that remembers which MSAL account is signed in. The
     /// tokens themselves live in MSAL's own cache; this is only the account
     /// identifier so silent sign-in survives relaunch.
@@ -76,6 +75,10 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
     private var needsInteraction = false
 
     private var refreshTask: Task<String, Error>?
+    /// Whether `refreshTask` was started with `forceRefresh`. A forced
+    /// refresh (after a 401) must never reuse the result of a non-forced one,
+    /// which may hand back the very token the server just rejected.
+    private var refreshTaskIsForced = false
     private var presentationAnchor: MicrosoftAuthPresentationAnchor?
     /// Bumped whenever pending work is cancelled or the account is cleared, so
     /// a late MSAL callback cannot write credentials back after sign-out.
@@ -161,6 +164,10 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
         operationGeneration &+= 1
         refreshTask?.cancel()
         refreshTask = nil
+        // Tell MSAL to end the system sign-in sheet as well; otherwise the
+        // ASWebAuthenticationSession stays open and `acquireToken` never
+        // completes, leaving the provider switch awaiting forever.
+        _ = MSALPublicClientApplication.cancelCurrentWebAuthSession()
         presentationAnchor?.dismiss()
         presentationAnchor = nil
     }
@@ -339,22 +346,37 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
         }
 
         if let running = refreshTask {
-            return try await running.value
+            if !forceRefresh || refreshTaskIsForced {
+                return try await running.value
+            }
+            // Let the non-forced refresh settle, then run a forced one below.
+            _ = try? await running.value
         }
 
         let generation = operationGeneration
         let task = Task<String, Error> { [self] in
-            defer { refreshTask = nil }
             let application = try makeApplication()
             guard let account = try existingAccount(in: application) else {
                 markNeedsInteraction()
                 throw MicrosoftAuthError.notSignedIn
             }
-            let snapshot = try await acquireTokenSilent(application: application, account: account, forceRefresh: forceRefresh)
-            try applyIfCurrent(snapshot, generation: generation)
-            return snapshot.accessToken
+            do {
+                let snapshot = try await acquireTokenSilent(application: application, account: account, forceRefresh: forceRefresh)
+                try applyIfCurrent(snapshot, generation: generation)
+                return snapshot.accessToken
+            } catch let error as MicrosoftAuthError where error == .notSignedIn {
+                // Silent refresh needs interaction (refresh token revoked or
+                // expired): record it so `isAuthorized` agrees with the
+                // Reconnect UI.
+                markNeedsInteraction()
+                throw error
+            }
         }
         refreshTask = task
+        refreshTaskIsForced = forceRefresh
+        // Only clear our own task: a newer one may have replaced it while we
+        // were suspended (e.g. after cancelPendingOperations).
+        defer { if refreshTask == task { refreshTask = nil } }
         return try await task.value
     }
 
@@ -373,13 +395,14 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
         forceRefresh: Bool
     ) async throws -> MicrosoftTokenSnapshot {
         try await withCheckedThrowingContinuation { continuation in
+            let once = ResumeOnce(continuation)
             let parameters = MSALSilentTokenParameters(scopes: Self.scopes, account: account)
             parameters.forceRefresh = forceRefresh
             application.acquireTokenSilent(with: parameters) { result, error in
                 if let result {
-                    continuation.resume(returning: Self.snapshot(from: result))
+                    once.resume(.success(Self.snapshot(from: result)))
                 } else {
-                    continuation.resume(throwing: Self.silentError(error))
+                    once.resume(.failure(Self.silentError(error)))
                 }
             }
         }
@@ -390,6 +413,13 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
         application: MSALPublicClientApplication,
         forcePrompt: Bool
     ) async throws -> MicrosoftTokenSnapshot {
+        if let previous = presentationAnchor {
+            // A second interactive attempt (e.g. Reconnect followed by Change
+            // account) supersedes the first: end its web session so its
+            // continuation resumes with `.cancelled` instead of leaking.
+            _ = MSALPublicClientApplication.cancelCurrentWebAuthSession()
+            previous.dismiss()
+        }
         let anchor = MicrosoftAuthPresentationAnchor()
         presentationAnchor = anchor
         defer {
@@ -405,6 +435,11 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
         let selectAccount = forcePrompt || forceAccountSelectionOnNextInteractive
         forceAccountSelectionOnNextInteractive = false
         return try await withCheckedThrowingContinuation { continuation in
+            // MSAL can invoke this completion more than once: after
+            // `cancelCurrentWebAuthSession()` it reports the cancellation
+            // immediately and the ASWebAuthenticationSession callback fires
+            // again afterwards. Resuming a CheckedContinuation twice traps.
+            let once = ResumeOnce(continuation)
             let webParameters = MSALWebviewParameters(authPresentationViewController: viewController)
             webParameters.webviewType = .authenticationSession
             let parameters = MSALInteractiveTokenParameters(scopes: Self.scopes, webviewParameters: webParameters)
@@ -412,9 +447,9 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
             parameters.loginHint = selectAccount ? nil : loginHint
             application.acquireToken(with: parameters) { result, error in
                 if let result {
-                    continuation.resume(returning: Self.snapshot(from: result))
+                    once.resume(.success(Self.snapshot(from: result)))
                 } else {
-                    continuation.resume(throwing: Self.interactiveError(error))
+                    once.resume(.failure(Self.interactiveError(error)))
                 }
             }
         }
@@ -438,7 +473,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
         if nsError.domain == MSALErrorDomain, nsError.code == MSALError.interactionRequired.rawValue {
             return MicrosoftAuthError.notSignedIn
         }
-        return error
+        return readable(nsError)
     }
 
     private nonisolated static func interactiveError(_ error: Error?) -> Error {
@@ -447,7 +482,23 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
         if nsError.domain == MSALErrorDomain, nsError.code == MSALError.userCanceled.rawValue {
             return MicrosoftAuthError.cancelled
         }
-        return error
+        return readable(nsError)
+    }
+
+    /// MSAL populates `MSALErrorDescriptionKey` but not
+    /// `NSLocalizedDescriptionKey`, so `localizedDescription` would read
+    /// "MSALErrorDomain error -50000". Promote the real message so the status
+    /// bar and Preferences show something actionable.
+    private nonisolated static func readable(_ error: NSError) -> Error {
+        guard error.domain == MSALErrorDomain,
+              error.userInfo[NSLocalizedDescriptionKey] == nil,
+              let description = error.userInfo[MSALErrorDescriptionKey] as? String,
+              !description.isEmpty else {
+            return error
+        }
+        var userInfo = error.userInfo
+        userInfo[NSLocalizedDescriptionKey] = description
+        return NSError(domain: error.domain, code: error.code, userInfo: userInfo)
     }
 
     /// Applies a freshly acquired token only if no cancellation or sign-out
@@ -530,7 +581,19 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
     /// a different identity when the MSAL cache holds several accounts.
     private func existingAccount(in application: MSALPublicClientApplication) throws -> MSALAccount? {
         guard let accountIdentifier else { return nil }
-        return try application.account(forIdentifier: accountIdentifier)
+        do {
+            return try application.account(forIdentifier: accountIdentifier)
+        } catch let error as NSError where error.domain == MSALErrorDomain {
+            throw error
+        } catch {
+            // `-accountForIdentifier:error:` returns nil with no NSError when
+            // no cached account matches; Swift surfaces that as a generic
+            // `_GenericObjCError.nilError`. Keychain OSStatus failures (cache
+            // wiped, app re-signed with a different Team ID) land here too.
+            // Either way the account cannot be used silently, so report "no
+            // account" and let callers fall through to the Reconnect path.
+            return nil
+        }
     }
 
     // MARK: - Account identifier persistence
@@ -713,5 +776,25 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
             case .unknown: return .unknown
             }
         }
+    }
+}
+
+/// Resumes a `CheckedContinuation` at most once. MSAL completion blocks are
+/// not guaranteed to fire exactly once (see `acquireTokenInteractive`), and a
+/// second resume would trap the process.
+private final class ResumeOnce<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value, Error>?
+
+    init(_ continuation: CheckedContinuation<Value, Error>) {
+        self.continuation = continuation
+    }
+
+    func resume(_ result: Result<Value, Error>) {
+        lock.lock()
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume(with: result)
     }
 }

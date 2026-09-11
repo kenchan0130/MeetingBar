@@ -120,6 +120,11 @@ public class CalendarSync: ObservableObject {
                 return .failed(error.localizedDescription)
             }
         }
+        if error is CancellationError {
+            // A sign-in that completed after cancelPendingOperations bumped
+            // the store's generation is discarded as cancelled, not failed.
+            return .cancelled
+        }
         return .failed(error.localizedDescription)
     }
 

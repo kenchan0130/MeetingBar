@@ -190,6 +190,9 @@ final class MicrosoftGraphPolicyTests: XCTestCase {
         XCTAssertNil(MicrosoftGraphDateParser.dateTime("not a date", timeZoneID: "UTC"))
         XCTAssertNil(MicrosoftGraphDateParser.dateTime("2026-09-09", timeZoneID: "UTC"))
         XCTAssertNil(MicrosoftGraphDateParser.dateTime("", timeZoneID: "UTC"))
+        XCTAssertNil(MicrosoftGraphDateParser.dateTime("2026-13-01T10:00:00", timeZoneID: "UTC"))
+        XCTAssertNil(MicrosoftGraphDateParser.dateTime("2026-02-30T10:00:00", timeZoneID: "UTC"))
+        XCTAssertNil(MicrosoftGraphDateParser.dateTime("2026-09-09T24:00:00", timeZoneID: "UTC"))
     }
 
     func testAllDayDateIsLocalMidnightRegardlessOfTimePart() {
@@ -329,6 +332,7 @@ final class MicrosoftGraphPolicyTests: XCTestCase {
         XCTAssertTrue(url.query?.contains("endDateTime=2026-09-10T00:00:00Z") ?? false)
         XCTAssertTrue(url.query?.contains("$orderby=start/dateTime") ?? false)
         XCTAssertTrue(url.query?.contains("$top=250") ?? false)
+        XCTAssertTrue(url.query?.contains("$select=" + MicrosoftGraphURLBuilder.eventSelectFields) ?? false)
     }
 
     func testNextLinkExtraction() {

@@ -9,7 +9,7 @@ If anything below disagrees with the actual code, the code wins — and the doc 
 
 ## What MeetingBar is, in one paragraph
 
-MeetingBar is a macOS menu-bar app that reads calendars (Apple Calendar via EventKit, Google Calendar via OAuth2), shows the next event in the system status bar, opens the right meeting URL when you click "Join", and fires notifications around event start/end. It is `NSApplicationDelegate`-based (AppKit) with SwiftUI used for Preferences/Onboarding/Fullscreen views. macOS 12+ minimum, Swift 6.
+MeetingBar is a macOS menu-bar app that reads calendars (Apple Calendar via EventKit, Google Calendar via OAuth2, Microsoft 365 via Microsoft Graph + MSAL), shows the next event in the system status bar, opens the right meeting URL when you click "Join", and fires notifications around event start/end. It is `NSApplicationDelegate`-based (AppKit) with SwiftUI used for Preferences/Onboarding/Fullscreen views. macOS 12+ minimum, Swift 6.
 
 The product principle is reliability first: **show the correct meeting, stay fresh, stay visible, open the right link**. New settings are a last resort — improve the default behavior instead.
 
@@ -92,9 +92,13 @@ MeetingBar/                         (~76 .swift files)
 │   └── Providers/
 │       ├── EventKit/
 │       │   └── EventKitEventStore.swift    — Apple Calendar via EventKit
-│       └── Google/
-│           ├── GoogleCalendarEventStore.swift — Google Calendar via AppAuth + REST
-│           └── GoogleCalendarPolicy.swift     — auth/error classification [SPM]
+│       ├── Google/
+│       │   ├── GoogleCalendarEventStore.swift — Google Calendar via AppAuth + REST
+│       │   └── GoogleCalendarPolicy.swift     — auth/error classification [SPM]
+│       └── Microsoft/
+│           ├── MicrosoftGraphEventStore.swift  — Microsoft 365 via MSAL + Graph REST
+│           ├── MicrosoftGraphPolicy.swift      — HTTP classification, mapping, dates, config [SPM]
+│           └── MicrosoftAuthPresentation.swift — anchor window for the MSAL sign-in sheet
 │
 ├── Meetings/                       — meeting URL detection, opening, services catalog
 │   ├── MeetingProvider.swift       — struct + static all (single source of provider metadata) [SPM]
@@ -371,7 +375,7 @@ The policy itself takes the snapshot and never imports `Defaults`. This is what 
 
 ## Provider abstraction
 
-`EventStore` (`Calendar/EventStore.swift`) is the seam between the app and a calendar provider. Two implementations ship today:
+`EventStore` (`Calendar/EventStore.swift`) is the seam between the app and a calendar provider. Three implementations ship today:
 
 - **`EKEventStore`** — wraps EventKit. Always available; permission prompt the first time. No OAuth.
 - **`GCEventStore`** — wraps Google Calendar API via AppAuth-iOS. OAuth2 flow with refresh tokens persisted in Keychain. Per-calendar 403 handling so one inaccessible calendar does not disconnect the account.
