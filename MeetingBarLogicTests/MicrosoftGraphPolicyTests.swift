@@ -221,7 +221,8 @@ final class MicrosoftGraphPolicyTests: XCTestCase {
         XCTAssertEqual(MicrosoftGraphEventMapping.attendeeStatus(response: "declined"), .declined)
         XCTAssertEqual(MicrosoftGraphEventMapping.attendeeStatus(response: "tentativelyAccepted"), .tentative)
         XCTAssertEqual(MicrosoftGraphEventMapping.attendeeStatus(response: "notResponded"), .pending)
-        XCTAssertEqual(MicrosoftGraphEventMapping.attendeeStatus(response: "none"), .unknown)
+        XCTAssertEqual(MicrosoftGraphEventMapping.attendeeStatus(response: "none"), .pending)
+        XCTAssertEqual(MicrosoftGraphEventMapping.attendeeStatus(response: "something-new"), .unknown)
         XCTAssertEqual(MicrosoftGraphEventMapping.attendeeStatus(response: nil), .unknown)
     }
 
@@ -337,6 +338,21 @@ final class MicrosoftGraphPolicyTests: XCTestCase {
             "https://graph.microsoft.com/v1.0/me/calendars?$skip=100"
         )
         XCTAssertNil(MicrosoftGraphURLBuilder.nextLink(from: [:]))
+    }
+
+    func testNextLinkRejectsForeignOrInsecureHosts() {
+        XCTAssertNil(MicrosoftGraphURLBuilder.nextLink(
+            from: ["@odata.nextLink": "https://evil.example.com/v1.0/me/calendars?$skip=100"]
+        ))
+        XCTAssertNil(MicrosoftGraphURLBuilder.nextLink(
+            from: ["@odata.nextLink": "http://graph.microsoft.com/v1.0/me/calendars?$skip=100"]
+        ))
+        XCTAssertEqual(
+            MicrosoftGraphURLBuilder.nextLink(
+                from: ["@odata.nextLink": "https://graph.microsoft.com/v1.0/me/calendars?$skip=100"]
+            )?.absoluteString,
+            "https://graph.microsoft.com/v1.0/me/calendars?$skip=100"
+        )
     }
 
     // MARK: - Error descriptions

@@ -128,6 +128,7 @@ enum MicrosoftGraphHTTPStatusPolicy {
         "ResourceNotFound"
     ]
 
+    /// Decides how to handle a Graph HTTP response: proceed, refresh the token, defer, or throw.
     static func classify(
         _ response: MicrosoftGraphResponse,
         retrying: Bool,
@@ -220,6 +221,7 @@ enum MicrosoftGraphDateParser {
         pattern: #"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:?\d{2})?$"#
     )
 
+    /// Parses a Graph `dateTime` string (optionally with a sibling time-zone id) into a `Date`.
     static func dateTime(_ value: String, timeZoneID: String?) -> Date? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         let range = NSRange(trimmed.startIndex..., in: trimmed)
@@ -268,6 +270,7 @@ enum MicrosoftGraphDateParser {
         return calendar.startOfDay(for: date)
     }
 
+    /// Parses a trailing `Z` or ±hh:mm designator into a `TimeZone`.
     private static func timeZone(fromDesignator designator: String) -> TimeZone? {
         if designator == "Z" {
             return TimeZone(identifier: "UTC")
@@ -304,6 +307,7 @@ enum MicrosoftGraphResponseValue: Equatable {
 }
 
 enum MicrosoftGraphEventMapping {
+    /// Maps Graph `isCancelled`/`showAs` to a provider-neutral event status.
     static func status(isCancelled: Bool, showAs: String?) -> MicrosoftGraphEventStatusValue {
         if isCancelled {
             return .canceled
@@ -314,6 +318,7 @@ enum MicrosoftGraphEventMapping {
         return .confirmed
     }
 
+    /// Maps a Graph attendee `responseStatus.response` to a provider-neutral value.
     static func attendeeStatus(response: String?) -> MicrosoftGraphResponseValue {
         switch response?.lowercased() {
         case "accepted", "organizer":
@@ -322,17 +327,22 @@ enum MicrosoftGraphEventMapping {
             return .declined
         case "tentativelyaccepted":
             return .tentative
-        case "notresponded":
+        case "notresponded", "none":
+            // Graph reports the current user's own non-response as `none`
+            // from the organizer's perspective; it is equivalent to
+            // `notResponded`.
             return .pending
         default:
             return .unknown
         }
     }
 
+    /// Whether a Graph attendee `type` marks the attendee optional.
     static func isOptional(attendeeType: String?) -> Bool {
         attendeeType?.lowercased() == "optional"
     }
 
+    /// Picks the online-meeting join URL, preferring the structured `onlineMeeting.joinUrl`.
     static func conferenceURL(onlineMeetingJoinURL: String?, onlineMeetingURL: String?) -> URL? {
         for candidate in [onlineMeetingJoinURL, onlineMeetingURL] {
             if let candidate, !candidate.isEmpty, let url = URL(string: candidate) {
@@ -342,6 +352,7 @@ enum MicrosoftGraphEventMapping {
         return nil
     }
 
+    /// Whether a Graph event belongs to a recurring series.
     static func isRecurrent(type: String?, seriesID: String?) -> Bool {
         if let seriesID, !seriesID.isEmpty {
             return true
@@ -354,6 +365,7 @@ enum MicrosoftGraphEventMapping {
         }
     }
 
+    /// Case-insensitive comparison of an attendee address to the signed-in user.
     static func isCurrentUser(address: String?, username: String?) -> Bool {
         guard let address, let username else { return false }
         return address.caseInsensitiveCompare(username) == .orderedSame
@@ -432,16 +444,19 @@ enum MicrosoftGraphConfigurationPolicy {
         )
     }
 
+    /// Whether a string is a well-formed client-ID GUID.
     static func isValidClientID(_ value: String) -> Bool {
         matches(guidPattern, value)
     }
 
+    /// Trims whitespace and returns nil for an empty result.
     private static func normalized(_ value: String?) -> String? {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    /// Whether the regex matches across the entire string.
     private static func matches(_ regex: NSRegularExpression, _ value: String) -> Bool {
         let range = NSRange(value.startIndex..., in: value)
         return regex.firstMatch(in: value, range: range) != nil
@@ -456,6 +471,7 @@ enum MicrosoftGraphURLBuilder {
     static let calendarSelectFields = "id,name,hexColor,isDefaultCalendar,owner,canShare"
     static let defaultPageSize = 250
 
+    /// Builds the `/me/calendars` request URL.
     static func calendarsURL(top: Int = 100) throws -> URL {
         var components = URLComponents()
         components.scheme = "https"
@@ -476,6 +492,7 @@ enum MicrosoftGraphURLBuilder {
     /// assigned through `percentEncodedPath`.
     private static let pathSegmentAllowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_.~"))
 
+    /// Builds a calendar's `calendarView` URL for the range, percent-encoding the id exactly once.
     static func calendarViewURL(
         calendarID: String,
         start: Date,
@@ -505,8 +522,16 @@ enum MicrosoftGraphURLBuilder {
         return url
     }
 
+    /// Extracts the pagination link, but only if it stays on Graph over HTTPS.
+    /// The link comes from the response body, so a foreign or non-HTTPS host is
+    /// rejected before the caller can send the bearer token to it.
     static func nextLink(from root: [String: Any]) -> URL? {
-        guard let link = root["@odata.nextLink"] as? String else { return nil }
-        return URL(string: link)
+        guard let link = root["@odata.nextLink"] as? String,
+              let url = URL(string: link),
+              url.scheme?.lowercased() == "https",
+              url.host?.lowercased() == host else {
+            return nil
+        }
+        return url
     }
 }

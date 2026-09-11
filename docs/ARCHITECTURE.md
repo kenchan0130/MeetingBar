@@ -476,7 +476,7 @@ Treat these as release-sensitive files. Changes should be named in PR notes and 
 - `Scripts/**`
 - `MeetingBar/Resources /Localization /en.lproj/Localizable.strings`
 
-Before a signed release, verify the configuration that unsigned local Debug builds cannot prove: signing team and provisioning, hardened runtime, sandbox capabilities, URL schemes, Google OAuth placeholders and callback scheme, the `MICROSOFT_CLIENT_ID` placeholder and MSAL keychain cache behavior on a signed build, App Store receipt classification, StoreKit 2 patronage products, launch-at-login helper behavior, and localization validation.
+Before a signed release, verify the configuration that unsigned local Debug builds cannot prove: signing team and provisioning, hardened runtime, sandbox capabilities, URL schemes, Google OAuth placeholders and callback scheme, the `MICROSOFT_CLIENT_ID` placeholder plus, on a signed build, production Entra `Calendars.Read` consent and MSAL keychain cache behavior, App Store receipt classification, StoreKit 2 patronage products, launch-at-login helper behavior, and localization validation.
 
 Standard release validation starts with:
 
@@ -487,7 +487,7 @@ make test
 make build-release
 ```
 
-Then manually smoke-test first launch/onboarding for EventKit and Google Calendar, provider switching and Google sign-out, wake/screen-lock/timezone/day-change refreshes, status-bar/menu states, meeting-link opening, notifications, fullscreen reminders, scripts, Preferences, diagnostics copy, app URL routes, and app termination while refresh, OAuth, delayed actions, or StoreKit updates are active.
+Then manually smoke-test first launch/onboarding for EventKit, Google Calendar, and Microsoft 365; provider switching, Google sign-out, and Microsoft 365 connect / reconnect / silent refresh / sign-out / account switching; wake/screen-lock/timezone/day-change refreshes; status-bar/menu states; meeting-link opening; notifications; fullscreen reminders; scripts; Preferences; diagnostics copy; app URL routes; and app termination while refresh, OAuth, delayed actions, or StoreKit updates are active.
 
 ---
 

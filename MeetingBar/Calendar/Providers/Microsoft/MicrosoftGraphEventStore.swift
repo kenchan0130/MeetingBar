@@ -56,6 +56,10 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
         let configuration = URLSessionConfiguration.default
         configuration.httpMaximumConnectionsPerHost = 6
         configuration.waitsForConnectivity = true
+        // Bound each request so a stalled Graph call cannot hold a calendar
+        // fetch open for URLSession's multi-day default resource timeout.
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 60
         return URLSession(configuration: configuration)
     }()
 
@@ -110,6 +114,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
 
     // MARK: - AuthenticatedEventStore
 
+    /// Signs the user in, reusing the stored account silently when possible and otherwise running the interactive MSAL flow.
     func signIn(forcePrompt: Bool) async throws {
         let generation = operationGeneration
         let application = try makeApplication()
@@ -129,6 +134,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
         AppMessageCenter.shared.post(.microsoftAccountConnected(email: snapshot.username ?? ""))
     }
 
+    /// Signs out of MSAL and clears the persisted account identifier.
     func signOut() async {
         cancelPendingOperations()
 
@@ -150,6 +156,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
         forceAccountSelectionOnNextInteractive = true
     }
 
+    /// Cancels in-flight refresh and interactive sign-in work and dismisses the sign-in window.
     func cancelPendingOperations() {
         operationGeneration &+= 1
         refreshTask?.cancel()
@@ -158,8 +165,10 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
         presentationAnchor = nil
     }
 
+    /// No-op: Microsoft Graph has no local source list to refresh.
     func refreshSources() async {}
 
+    /// Fetches every calendar in the account, following Graph pagination.
     func fetchAllCalendars() async throws -> [MBCalendar] {
         try await ensureSignedIn()
 
@@ -186,6 +195,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
         }
     }
 
+    /// Fetches events for the selected calendars in the range, skipping calendars that are individually inaccessible.
     func fetchEventsForDateRange(
         for calendars: [MBCalendar],
         from: Date,
@@ -225,6 +235,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
 
     // MARK: - Event fetching
 
+    /// Fetches a single calendar's events for the range, following Graph pagination.
     private func fetchEvents(for calendar: MBCalendar, from: Date, to: Date) async throws -> [MBEvent] {
         let username = userEmail
         var events: [MBEvent] = []
@@ -250,6 +261,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
 
     // MARK: - Networking
 
+    /// Performs an authorized Graph GET and applies the HTTP status policy (token refresh, throttling, per-calendar errors).
     private func fetchJSON(
         _ url: URL,
         calendarID: String? = nil,
@@ -318,6 +330,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
         _ = try await validAccessToken()
     }
 
+    /// Returns a fresh access token, refreshing silently and coalescing concurrent refreshes.
     private func validAccessToken(forceRefresh: Bool = false) async throws -> String {
         if !forceRefresh,
            let cachedToken,
@@ -345,6 +358,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
         return try await task.value
     }
 
+    /// Whether the cached token is still valid beyond the freshness window.
     private func isTokenFresh(_ snapshot: MicrosoftTokenSnapshot) -> Bool {
         guard let expiresOn = snapshot.expiresOn else { return false }
         return expiresOn > Date().addingTimeInterval(Self.tokenFreshnessWindow)
@@ -352,6 +366,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
 
     // MARK: - MSAL bridging
 
+    /// Bridges MSAL's silent token acquisition into async/await as a Sendable snapshot.
     private func acquireTokenSilent(
         application: MSALPublicClientApplication,
         account: MSALAccount,
@@ -370,6 +385,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
         }
     }
 
+    /// Runs MSAL's interactive sign-in in the anchor window and returns a Sendable snapshot.
     private func acquireTokenInteractive(
         application: MSALPublicClientApplication,
         forcePrompt: Bool
@@ -442,6 +458,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
         apply(snapshot)
     }
 
+    /// Stores the acquired token, email, and account identifier.
     private func apply(_ snapshot: MicrosoftTokenSnapshot) {
         cachedToken = snapshot
         needsInteraction = false
@@ -453,6 +470,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
         }
     }
 
+    /// Marks that only interactive sign-in can recover, clearing the cached token.
     private func markNeedsInteraction() {
         needsInteraction = true
         cachedToken = nil
@@ -460,6 +478,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
 
     // MARK: - Configuration
 
+    /// Builds (once) the MSAL application from the resolved configuration.
     private func makeApplication() throws -> MSALPublicClientApplication {
         if let application {
             return application
@@ -489,6 +508,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
         return application
     }
 
+    /// Resolves and caches the Entra client configuration from the build setting.
     private func resolvedConfiguration() throws -> MicrosoftGraphConfiguration {
         if let configuration {
             return configuration
@@ -515,16 +535,19 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
 
     // MARK: - Account identifier persistence
 
+    /// Persists the signed-in account identifier to the keychain.
     private func persist(accountIdentifier: String) {
         self.accountIdentifier = accountIdentifier
         Keychain.save(data: Data(accountIdentifier.utf8), for: Self.accountKeychainService)
     }
 
+    /// Restores the persisted account identifier from the keychain, if any.
     private func restoreAccountIdentifier() -> String? {
         guard let data = Keychain.load(for: Self.accountKeychainService) else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
+    /// Clears all local account state and bumps the operation generation.
     private func clearAccountState() {
         operationGeneration &+= 1
         accountIdentifier = nil
@@ -537,6 +560,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
     // MARK: - Graph JSON → MBEvent
 
     enum MSGraphParser {
+        /// Builds an `MBEvent` from a Graph event JSON object, or nil when required fields are missing.
         static func event(
             from item: [String: Any],
             calendar: MBCalendar,
@@ -620,6 +644,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
             )
         }
 
+        /// Maps Graph attendees to `MBEventAttendee`, synthesizing the current user from the event response status when absent.
         private static func parseAttendees(item: [String: Any], username: String?) -> [MBEventAttendee] {
             var attendees: [MBEventAttendee] = []
             var hasCurrentUser = false
@@ -660,6 +685,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
             return attendees
         }
 
+        /// Parses a Graph date value, using local midnight for all-day events.
         private static func date(from value: [String: Any], isAllDay: Bool) -> Date? {
             guard let dateTime = value["dateTime"] as? String else { return nil }
             if isAllDay {
@@ -668,6 +694,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
             return MicrosoftGraphDateParser.dateTime(dateTime, timeZoneID: value["timeZone"] as? String)
         }
 
+        /// Maps the policy's event-status value to `MBEventStatus`.
         private static func status(from value: MicrosoftGraphEventStatusValue) -> MBEventStatus {
             switch value {
             case .confirmed: return .confirmed
@@ -676,6 +703,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
             }
         }
 
+        /// Maps the policy's response value to `MBEventAttendeeStatus`.
         private static func attendeeStatus(from value: MicrosoftGraphResponseValue) -> MBEventAttendeeStatus {
             switch value {
             case .accepted: return .accepted

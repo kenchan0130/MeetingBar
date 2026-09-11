@@ -56,12 +56,14 @@ final class MicrosoftAuthPresentationAnchor {
         return hosting
     }
 
+    /// Closes and releases the sign-in anchor window.
     func dismiss() {
         window?.orderOut(nil)
         window?.contentViewController = nil
         window = nil
     }
 
+    /// Centers the panel over a visible Preferences/Onboarding window, or on screen when none is open.
     private func positionOverActiveWindowOrCenter(_ panel: NSWindow) {
         let anchorWindow = NSApp.windows.first { candidate in
             candidate.isVisible
