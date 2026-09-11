@@ -379,7 +379,7 @@ The policy itself takes the snapshot and never imports `Defaults`. This is what 
 
 - **`EKEventStore`** — wraps EventKit. Always available; permission prompt the first time. No OAuth.
 - **`GCEventStore`** — wraps Google Calendar API via AppAuth-iOS. OAuth2 flow with refresh tokens persisted in Keychain. Per-calendar 403 handling so one inaccessible calendar does not disconnect the account.
-- **`MicrosoftGraphEventStore`** — wraps Microsoft Graph via MSAL against the `common` authority (work, school, and personal Microsoft accounts). MSAL is used instead of a generic OIDC library specifically so the **Microsoft Enterprise SSO plug-in** works on MDM-managed Macs. Signs in through ASWebAuthenticationSession, so no URL scheme or `URLHandler` callback is needed. Per-calendar 403/404 handling mirrors the Google store. Pure decisions live in `MicrosoftGraphPolicy.swift` (hostless-tested).
+- **`MicrosoftGraphEventStore`** — wraps Microsoft Graph via MSAL against the `common` authority (work, school, and personal Microsoft accounts). MSAL is used instead of a generic OIDC library for two reasons: the **Microsoft Enterprise SSO plug-in** works on MDM-managed Macs, and MSAL owns the **token lifecycle** — access and refresh tokens live in MSAL's Keychain-backed cache (scoped to the app's own access group via `keychainSharingGroup`), silent refresh, expiry/revocation handling and multi-account storage are all inside the SDK, so the app persists only the opaque account identifier and never handles a refresh token (the Google/AppAuth path, by contrast, serialises `OIDAuthState` including the refresh token into an app-owned Keychain item). Signs in through ASWebAuthenticationSession, so no URL scheme or `URLHandler` callback is needed. Per-calendar 403/404 handling mirrors the Google store. Pure decisions live in `MicrosoftGraphPolicy.swift` (hostless-tested).
 
 `EventStore` contains provider-neutral fetch and cancellation operations. `AuthenticatedEventStore` extends it with explicit authorization/sign-out. Google uses that boundary for OAuth; EventKit uses it for calendar permission.
 
@@ -454,7 +454,7 @@ Direct app dependencies are declared as Xcode Swift Package references in `Meeti
 | Defaults | `9.0.2 ..< 9.1.0` | `9.0.3` | Typed user defaults |
 | LaunchAtLogin | `5.0.2 ..< 6.0.0` | `5.0.2` | Login item integration |
 | AppAuth-iOS | `2.0.0 ..< 3.0.0` | `2.0.0` | Google OAuth |
-| MSAL (microsoft-authentication-library-for-objc) | `2.14.1 ..< 2.15.0` | `2.14.1` | Microsoft 365 OAuth. Chosen over AppAuth because MSAL integrates with the Microsoft Enterprise SSO plug-in on managed Macs. Pinned below 2.15.0, which raised its minimum to macOS 14. |
+| MSAL (microsoft-authentication-library-for-objc) | `2.14.1 ..< 2.15.0` | `2.14.1` | Microsoft 365 OAuth. Chosen over AppAuth because MSAL integrates with the Microsoft Enterprise SSO plug-in on managed Macs and manages the token cache (Keychain storage, silent refresh, revocation) itself, so the app never touches refresh tokens. Pinned below 2.15.0, which raised its minimum to macOS 14. |
 
 `swift-syntax 601.0.1` is currently transitive. StoreKit 2 is an Apple system framework used by `PatronageService`; it is not an external package dependency, and no external StoreKit package is used.
 

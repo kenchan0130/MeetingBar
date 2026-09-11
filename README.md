@@ -135,7 +135,7 @@ MeetingBar also uses these resources:
 * [Defaults](https://github.com/sindresorhus/Defaults) for managing user settings
 * [LaunchAtLogin](https://github.com/sindresorhus/LaunchAtLogin) for launch-at-login integration
 * [AppAuth-iOS](https://github.com/openid/AppAuth-iOS) for Google Calendar OAuth
-* [MSAL for iOS and macOS](https://github.com/AzureAD/microsoft-authentication-library-for-objc) for Microsoft 365 sign-in, including Microsoft Enterprise SSO plug-in support on managed Macs
+* [MSAL for iOS and macOS](https://github.com/AzureAD/microsoft-authentication-library-for-objc) for Microsoft 365 sign-in and token management (Keychain-backed cache and silent refresh), including Microsoft Enterprise SSO plug-in support on managed Macs
 
 App logo made by [Miroslav Rajkovic](https://www.rajkovic.co/).
 

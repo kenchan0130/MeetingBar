@@ -8,7 +8,10 @@
 //  `common` authority so work, school, and personal Microsoft accounts can
 //  sign in, then reads calendars and events through the Microsoft Graph REST
 //  API. MSAL is used instead of a generic OIDC library so the app benefits
-//  from the Microsoft Enterprise SSO plug-in on managed Macs.
+//  from the Microsoft Enterprise SSO plug-in on managed Macs, and so the
+//  token lifecycle (Keychain-backed cache, silent refresh, revocation,
+//  multiple accounts) stays inside the SDK: this store persists only the
+//  opaque account identifier and never sees a refresh token.
 //
 //  The provider is an independent implementation that mirrors the shape of
 //  `GCEventStore` (sign-in/refresh coalescing, a shared URLSession, per-call

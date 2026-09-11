@@ -11,7 +11,9 @@ For next releases info look here: <https://github.com/leits/MeetingBar/releases>
   2026.
 * Sign-in uses MSAL (Microsoft Authentication Library) rather than a generic
   OAuth library so the Microsoft Enterprise SSO plug-in works on MDM-managed
-  Macs. The app bundle grows by the MSAL framework.
+  Macs, and so token storage and silent refresh are handled by the SDK's
+  Keychain-backed cache instead of app code. The app bundle grows by the
+  MSAL framework.
 
 ## 5.0.0 (2026-06-19)
 
