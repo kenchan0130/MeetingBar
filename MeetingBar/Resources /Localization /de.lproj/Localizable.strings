@@ -256,7 +256,7 @@
 "access_screen_provider_gcalendar_data_source" = "Verbindet direkt durch die Google Kalender API";
 "access_screen_provider_gcalendar_number_of_accounts" = "Nur ein Google Account gleichzeitig";
 "access_screen_provider_microsoft_data_source" = "Verbindet direkt über die Microsoft Graph API";
-"access_screen_provider_microsoft_number_of_accounts" = "Nur ein Microsoft-Geschäfts-, Schul- oder privates Konto gleichzeitig";
+"access_screen_provider_microsoft_number_of_accounts" = "Nur ein Microsoft-Konto gleichzeitig (Geschäfts-, Schul- oder Privatkonto)";
 "access_screen_try_again" = "Neuer Versuch";
 
 // MARK: - Calendars screen

@@ -309,9 +309,9 @@
 "onboarding_apple_calendar_title" = "Aplikácia Kalendár macOS";
 "onboarding_authorization_apple_description" = "Povoľte aplikácii MeetingBar čítať udalosti z aplikácie Kalendár na tomto Macu.";
 "onboarding_authorization_google_description" = "Dokončite prihlásenie Google v prehliadači a vráťte sa do MeetingBar.";
-"onboarding_authorization_microsoft_description" = "Dokončite prihlásenie Microsoft v prehliadači a vráťte sa do MeetingBar.";
-"onboarding_authorization_microsoft_waiting" = "Pokračujte v prihlásení do Microsoft v prehliadači…";
-"onboarding_authorization_microsoft_window_title" = "Prihlásenie Microsoft";
+"onboarding_authorization_microsoft_description" = "Dokončite prihlásenie do Microsoftu v prehliadači a vráťte sa do MeetingBar.";
+"onboarding_authorization_microsoft_waiting" = "Pokračujte v prihlásení do Microsoftu v prehliadači…";
+"onboarding_authorization_microsoft_window_title" = "Prihlásenie do Microsoftu";
 "onboarding_authorization_title" = "Overiť prístup ku kalendáru";
 "onboarding_authorization_waiting" = "Čaká sa na autorizáciu…";
 "onboarding_calendar_selection_description" = "Vyberte kalendáre, ktorých stretnutia sa majú zobrazovať v MeetingBar.";

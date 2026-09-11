@@ -303,9 +303,9 @@
 "onboarding_apple_calendar_title" = "Aplikace Kalendář macOS";
 "onboarding_authorization_apple_description" = "Povolte aplikaci MeetingBar číst události z aplikace Kalendář na tomto Macu.";
 "onboarding_authorization_google_description" = "Dokončete přihlášení Google v prohlížeči a vraťte se do MeetingBar.";
-"onboarding_authorization_microsoft_description" = "Dokončete přihlášení Microsoft v prohlížeči a vraťte se do MeetingBar.";
-"onboarding_authorization_microsoft_waiting" = "Pokračujte v přihlášení k Microsoft v prohlížeči…";
-"onboarding_authorization_microsoft_window_title" = "Přihlášení Microsoft";
+"onboarding_authorization_microsoft_description" = "Dokončete přihlášení k Microsoftu v prohlížeči a vraťte se do MeetingBar.";
+"onboarding_authorization_microsoft_waiting" = "Pokračujte v přihlášení k Microsoftu v prohlížeči…";
+"onboarding_authorization_microsoft_window_title" = "Přihlášení k Microsoftu";
 "onboarding_authorization_title" = "Ověřit přístup ke kalendáři";
 "onboarding_authorization_waiting" = "Čeká se na autorizaci…";
 "onboarding_calendar_selection_description" = "Vyberte kalendáře, jejichž schůzky se mají zobrazovat v MeetingBar.";
