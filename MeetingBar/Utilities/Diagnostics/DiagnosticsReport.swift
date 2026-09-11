@@ -26,22 +26,48 @@ struct PermissionSnapshot: Equatable {
         case provisional
     }
 
-    enum GoogleAuthStatus: Equatable {
+    /// Sign-in state of an OAuth provider (Google, Microsoft 365).
+    enum OAuthStatus: Equatable {
         case notActive
         case notAuthorized
         case authorized
     }
 
+    typealias GoogleAuthStatus = OAuthStatus
+
     let calendarAccess: CalendarAccess
     let notificationAccess: NotificationAccess
-    let googleAuthStatus: GoogleAuthStatus
+    let googleAuthStatus: OAuthStatus
+    let microsoftAuthStatus: OAuthStatus
+    /// Where the Microsoft 365 client ID came from ("build setting",
+    /// "missing"); `nil` when the provider is not active.
+    let microsoftConfigurationSource: String?
     let scriptFileExists: Bool
     let isAppStoreBuild: Bool
+
+    init(
+        calendarAccess: CalendarAccess,
+        notificationAccess: NotificationAccess,
+        googleAuthStatus: OAuthStatus,
+        microsoftAuthStatus: OAuthStatus = .notActive,
+        microsoftConfigurationSource: String? = nil,
+        scriptFileExists: Bool,
+        isAppStoreBuild: Bool
+    ) {
+        self.calendarAccess = calendarAccess
+        self.notificationAccess = notificationAccess
+        self.googleAuthStatus = googleAuthStatus
+        self.microsoftAuthStatus = microsoftAuthStatus
+        self.microsoftConfigurationSource = microsoftConfigurationSource
+        self.scriptFileExists = scriptFileExists
+        self.isAppStoreBuild = isAppStoreBuild
+    }
 }
 
 enum DiagnosticsProvider: Equatable {
     case macOSEventKit
     case googleCalendar
+    case microsoftGraph
 }
 
 struct DiagnosticsHealth: Equatable {
@@ -127,12 +153,9 @@ enum DiagnosticsReport {
         case .notDetermined: notifications = "not determined"
         }
 
-        let google: String
-        switch perms.googleAuthStatus {
-        case .notActive: google = "n/a"
-        case .authorized: google = "authorized"
-        case .notAuthorized: google = "not authorized"
-        }
+        let google = oauthLabel(perms.googleAuthStatus)
+        let microsoft = oauthLabel(perms.microsoftAuthStatus)
+        let microsoftConfig = perms.microsoftConfigurationSource ?? "n/a"
 
         let script = perms.scriptFileExists ? "found" : "not found"
         let source = perms.isAppStoreBuild ? "App Store" : "direct"
@@ -140,15 +163,26 @@ enum DiagnosticsReport {
         Calendar permission: \(calendar)
         Notification permission: \(notifications)
         Google auth: \(google)
+        Microsoft auth: \(microsoft)
+        Microsoft config: \(microsoftConfig)
         Script file: \(script)
         App source: \(source)
         """
+    }
+
+    private static func oauthLabel(_ status: PermissionSnapshot.OAuthStatus) -> String {
+        switch status {
+        case .notActive: return "n/a"
+        case .authorized: return "authorized"
+        case .notAuthorized: return "not authorized"
+        }
     }
 
     private static func providerLabel(_ provider: DiagnosticsProvider) -> String {
         switch provider {
         case .macOSEventKit: return "Calendar.app (EventKit)"
         case .googleCalendar: return "Google Calendar"
+        case .microsoftGraph: return "Microsoft 365 (Graph)"
         }
     }
 

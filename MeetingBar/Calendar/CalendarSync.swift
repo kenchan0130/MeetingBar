@@ -110,6 +110,16 @@ public class CalendarSync: ObservableObject {
         if case .unauthorized = error as? GoogleCalendarError {
             return .authRequired(error.localizedDescription)
         }
+        if let microsoftAuthError = error as? MicrosoftAuthError {
+            switch microsoftAuthError {
+            case .cancelled:
+                return .cancelled
+            case .notSignedIn:
+                return .authRequired(error.localizedDescription)
+            case .refreshFailed, .configurationMissing, .configurationInvalid:
+                return .failed(error.localizedDescription)
+            }
+        }
         return .failed(error.localizedDescription)
     }
 

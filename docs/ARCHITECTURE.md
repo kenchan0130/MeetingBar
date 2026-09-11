@@ -20,7 +20,7 @@ The product principle is reliability first: **show the correct meeting, stay fre
 ```
                 ┌──────────────────────────────────────────────┐
                 │                Calendar providers            │
-                │   EKEventStore (Apple)   GCEventStore (GCal) │
+                │  EKEventStore   GCEventStore   MicrosoftGraph │
                 └───────────────▲──────────────────────────────┘
                                 │ fetchAllCalendars / fetchEventsForDateRange
                                 │
@@ -333,6 +333,7 @@ Long-running or delayed work must have one stored owner and an explicit cancella
 | Calendar refresh cycle and store-change refresh | `CalendarSync` | `stop()` |
 | Active provider operations | `CalendarRepository` / `EventStore` | provider switch and `stop()` call `cancelPendingOperations()` |
 | Google OAuth sign-in, token refresh, external authorization session | `GCEventStore` | sign-out, provider switch, app termination |
+| Microsoft 365 sign-in (MSAL), silent token refresh, ASWebAuthenticationSession presentation anchor | `MicrosoftGraphEventStore` | sign-out, provider switch, app termination |
 | Delayed fullscreen, auto-join, and event-start script actions | `NotificationScheduler` | reconcile removes stale plans; `stop()` cancels all |
 | StoreKit transaction update listener | `PatronageService` | `stop()` |
 | Lifecycle notification registrations | `LifecycleObserver` | `stop()` |
@@ -374,10 +375,11 @@ The policy itself takes the snapshot and never imports `Defaults`. This is what 
 
 - **`EKEventStore`** — wraps EventKit. Always available; permission prompt the first time. No OAuth.
 - **`GCEventStore`** — wraps Google Calendar API via AppAuth-iOS. OAuth2 flow with refresh tokens persisted in Keychain. Per-calendar 403 handling so one inaccessible calendar does not disconnect the account.
+- **`MicrosoftGraphEventStore`** — wraps Microsoft Graph via MSAL against the `common` authority (work, school, and personal Microsoft accounts). MSAL is used instead of a generic OIDC library specifically so the **Microsoft Enterprise SSO plug-in** works on MDM-managed Macs. Signs in through ASWebAuthenticationSession, so no URL scheme or `URLHandler` callback is needed. Per-calendar 403/404 handling mirrors the Google store. Pure decisions live in `MicrosoftGraphPolicy.swift` (hostless-tested).
 
 `EventStore` contains provider-neutral fetch and cancellation operations. `AuthenticatedEventStore` extends it with explicit authorization/sign-out. Google uses that boundary for OAuth; EventKit uses it for calendar permission.
 
-**Adding a third provider** (e.g. Microsoft Graph in 5.x): implement `EventStore`, map provider events into `MBEvent`, expose calendars as `MBCalendar`. Do not push provider-specific types past the store boundary — the rest of the app must remain provider-agnostic.
+**Adding a fourth provider**: implement `EventStore`, map provider events into `MBEvent`, expose calendars as `MBCalendar`. Do not push provider-specific types past the store boundary — the rest of the app must remain provider-agnostic. Keep pure decisions (HTTP classification, field mapping, date parsing, configuration resolution) in a `*Policy.swift` file added to `Package.swift` sources so they get fast hostless tests, exactly like `GoogleCalendarPolicy.swift` and `MicrosoftGraphPolicy.swift`.
 
 ---
 
@@ -448,6 +450,7 @@ Direct app dependencies are declared as Xcode Swift Package references in `Meeti
 | Defaults | `9.0.2 ..< 9.1.0` | `9.0.3` | Typed user defaults |
 | LaunchAtLogin | `5.0.2 ..< 6.0.0` | `5.0.2` | Login item integration |
 | AppAuth-iOS | `2.0.0 ..< 3.0.0` | `2.0.0` | Google OAuth |
+| MSAL (microsoft-authentication-library-for-objc) | `2.14.1 ..< 2.15.0` | `2.14.1` | Microsoft 365 OAuth. Chosen over AppAuth because MSAL integrates with the Microsoft Enterprise SSO plug-in on managed Macs. Pinned below 2.15.0, which raised its minimum to macOS 14. |
 
 `swift-syntax 601.0.1` is currently transitive. StoreKit 2 is an Apple system framework used by `PatronageService`; it is not an external package dependency, and no external StoreKit package is used.
 
@@ -473,7 +476,7 @@ Treat these as release-sensitive files. Changes should be named in PR notes and 
 - `Scripts/**`
 - `MeetingBar/Resources /Localization /en.lproj/Localizable.strings`
 
-Before a signed release, verify the configuration that unsigned local Debug builds cannot prove: signing team and provisioning, hardened runtime, sandbox capabilities, URL schemes, Google OAuth placeholders and callback scheme, App Store receipt classification, StoreKit 2 patronage products, launch-at-login helper behavior, and localization validation.
+Before a signed release, verify the configuration that unsigned local Debug builds cannot prove: signing team and provisioning, hardened runtime, sandbox capabilities, URL schemes, Google OAuth placeholders and callback scheme, the `MICROSOFT_CLIENT_ID` placeholder and MSAL keychain cache behavior on a signed build, App Store receipt classification, StoreKit 2 patronage products, launch-at-login helper behavior, and localization validation.
 
 Standard release validation starts with:
 
