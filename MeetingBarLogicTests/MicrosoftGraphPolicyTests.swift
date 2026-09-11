@@ -21,11 +21,13 @@ final class MicrosoftGraphPolicyTests: XCTestCase {
         rateLimitRetries: Int = 0
     ) -> MicrosoftGraphHTTPDecision {
         MicrosoftGraphHTTPStatusPolicy.classify(
-            statusCode: statusCode,
-            url: url ?? (calendarID == nil ? calendarsURL : calendarViewURL),
-            calendarID: calendarID,
-            graphErrorCode: graphErrorCode,
-            retryAfterHeader: retryAfterHeader,
+            MicrosoftGraphResponse(
+                statusCode: statusCode,
+                url: url ?? (calendarID == nil ? calendarsURL : calendarViewURL),
+                calendarID: calendarID,
+                graphErrorCode: graphErrorCode,
+                retryAfterHeader: retryAfterHeader
+            ),
             retrying: retrying,
             rateLimitRetries: rateLimitRetries
         )
@@ -246,11 +248,11 @@ final class MicrosoftGraphPolicyTests: XCTestCase {
     }
 
     func testRecurrenceDetection() {
-        XCTAssertTrue(MicrosoftGraphEventMapping.isRecurrent(type: "occurrence", seriesMasterID: nil))
-        XCTAssertTrue(MicrosoftGraphEventMapping.isRecurrent(type: "exception", seriesMasterID: nil))
-        XCTAssertTrue(MicrosoftGraphEventMapping.isRecurrent(type: "singleInstance", seriesMasterID: "master"))
-        XCTAssertFalse(MicrosoftGraphEventMapping.isRecurrent(type: "singleInstance", seriesMasterID: nil))
-        XCTAssertFalse(MicrosoftGraphEventMapping.isRecurrent(type: nil, seriesMasterID: ""))
+        XCTAssertTrue(MicrosoftGraphEventMapping.isRecurrent(type: "occurrence", seriesID: nil))
+        XCTAssertTrue(MicrosoftGraphEventMapping.isRecurrent(type: "exception", seriesID: nil))
+        XCTAssertTrue(MicrosoftGraphEventMapping.isRecurrent(type: "singleInstance", seriesID: "master"))
+        XCTAssertFalse(MicrosoftGraphEventMapping.isRecurrent(type: "singleInstance", seriesID: nil))
+        XCTAssertFalse(MicrosoftGraphEventMapping.isRecurrent(type: nil, seriesID: ""))
     }
 
     func testCurrentUserDetectionIsCaseInsensitive() {

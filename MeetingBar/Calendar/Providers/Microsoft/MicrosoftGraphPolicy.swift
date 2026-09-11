@@ -89,6 +89,30 @@ enum MicrosoftGraphHTTPDecision: Equatable {
     case throwError(MicrosoftGraphError)
 }
 
+/// The facts about a single Microsoft Graph HTTP response that
+/// `MicrosoftGraphHTTPStatusPolicy` needs to decide what to do next.
+struct MicrosoftGraphResponse: Equatable {
+    let statusCode: Int
+    let url: URL
+    let calendarID: String?
+    let graphErrorCode: String?
+    let retryAfterHeader: String?
+
+    init(
+        statusCode: Int,
+        url: URL,
+        calendarID: String? = nil,
+        graphErrorCode: String? = nil,
+        retryAfterHeader: String? = nil
+    ) {
+        self.statusCode = statusCode
+        self.url = url
+        self.calendarID = calendarID
+        self.graphErrorCode = graphErrorCode
+        self.retryAfterHeader = retryAfterHeader
+    }
+}
+
 enum MicrosoftGraphHTTPStatusPolicy {
     /// Longest delay we will wait for inline before retrying. Longer
     /// `Retry-After` values are deferred to the next scheduled sync rather
@@ -105,15 +129,14 @@ enum MicrosoftGraphHTTPStatusPolicy {
     ]
 
     static func classify(
-        statusCode: Int,
-        url: URL,
-        calendarID: String?,
-        graphErrorCode: String?,
-        retryAfterHeader: String?,
+        _ response: MicrosoftGraphResponse,
         retrying: Bool,
         rateLimitRetries: Int
     ) -> MicrosoftGraphHTTPDecision {
-        switch statusCode {
+        let url = response.url
+        let calendarID = response.calendarID
+        let graphErrorCode = response.graphErrorCode
+        switch response.statusCode {
         case 200...299:
             return .proceed
         case 401:
@@ -129,9 +152,9 @@ enum MicrosoftGraphHTTPStatusPolicy {
             if let graphErrorCode, mailboxUnavailableCodes.contains(graphErrorCode) {
                 return .throwError(.mailboxNotAvailable(url))
             }
-            return .throwError(.httpStatus(statusCode, code: graphErrorCode, url: url))
+            return .throwError(.httpStatus(response.statusCode, code: graphErrorCode, url: url))
         case 429, 503:
-            let parsed = retryAfterInterval(header: retryAfterHeader)
+            let parsed = retryAfterInterval(header: response.retryAfterHeader)
             if rateLimitRetries < 1 {
                 let delay = parsed ?? defaultRetryAfter
                 if delay <= maxInlineRetryDelay {
@@ -140,7 +163,7 @@ enum MicrosoftGraphHTTPStatusPolicy {
             }
             return .throwError(.rateLimited(retryAfter: parsed ?? defaultRetryAfter, url: url))
         default:
-            return .throwError(.httpStatus(statusCode, code: graphErrorCode, url: url))
+            return .throwError(.httpStatus(response.statusCode, code: graphErrorCode, url: url))
         }
     }
 
@@ -319,8 +342,8 @@ enum MicrosoftGraphEventMapping {
         return nil
     }
 
-    static func isRecurrent(type: String?, seriesMasterID: String?) -> Bool {
-        if let seriesMasterID, !seriesMasterID.isEmpty {
+    static func isRecurrent(type: String?, seriesID: String?) -> Bool {
+        if let seriesID, !seriesID.isEmpty {
             return true
         }
         switch type?.lowercased() {

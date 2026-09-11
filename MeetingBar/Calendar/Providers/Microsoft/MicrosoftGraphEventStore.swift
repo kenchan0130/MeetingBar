@@ -94,7 +94,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
     var isAuthorized: Bool {
         guard !needsInteraction, accountIdentifier != nil else { return false }
         guard let application = try? makeApplication() else { return false }
-        return ((try? existingAccount(in: application)) ?? nil) != nil
+        return (try? existingAccount(in: application)) != nil
     }
 
     /// Human-readable source of the resolved client ID for diagnostics
@@ -275,15 +275,18 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
         let graphErrorCode = (root?["error"] as? [String: Any])?["code"] as? String
         let retryAfter = http.value(forHTTPHeaderField: "Retry-After")
 
-        switch MicrosoftGraphHTTPStatusPolicy.classify(
-            statusCode: http.statusCode,
-            url: url,
-            calendarID: calendarID,
-            graphErrorCode: graphErrorCode,
-            retryAfterHeader: retryAfter,
+        let classified = MicrosoftGraphHTTPStatusPolicy.classify(
+            MicrosoftGraphResponse(
+                statusCode: http.statusCode,
+                url: url,
+                calendarID: calendarID,
+                graphErrorCode: graphErrorCode,
+                retryAfterHeader: retryAfter
+            ),
             retrying: retrying,
             rateLimitRetries: rateLimitRetries
-        ) {
+        )
+        switch classified {
         case .proceed:
             break
         case .retryWithForcedTokenRefresh:
@@ -534,7 +537,6 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
     // MARK: - Graph JSON → MBEvent
 
     enum MSGraphParser {
-        // swiftlint:disable:next cyclomatic_complexity function_body_length
         static func event(
             from item: [String: Any],
             calendar: MBCalendar,
@@ -594,7 +596,7 @@ final class MicrosoftGraphEventStore: NSObject, AuthenticatedEventStore {
 
             let recurrent = MicrosoftGraphEventMapping.isRecurrent(
                 type: item["type"] as? String,
-                seriesMasterID: item["seriesMasterId"] as? String
+                seriesID: item["seriesMasterId"] as? String
             )
 
             return MBEvent(
